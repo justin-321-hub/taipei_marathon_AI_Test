@@ -1,17 +1,24 @@
 /**
- * app.js — 前端純 JS 聊天室邏輯（已修改支援 n8n HTML 回傳）
+ * app.js — Frontend Chat Logic (English Version)
+ * ---------------------------------------------------------
+ * Key Features:
+ * 1) Basic message handling (User/Bot)
+ * 2) No-login multi-user support via localStorage clientId
+ * 3) Thinking animation control
+ * 4) Backend API integration with English response request
+ * 5) HTML rendering support for rich text responses
  */
 
 "use strict";
 
 /* =========================
-   後端 API 網域
+   Backend API Configuration
    ========================= */
-const API_BASE = "https://taipei-marathon-server.onrender.com";
+const API_BASE = "https://taipei-marathon-ai-test-server.onrender.com";
 const api = (p) => `${API_BASE}${p}`;
 
 /* =========================
-   免登入多使用者：clientId
+   Client ID Management
    ========================= */
 const CID_KEY = "fourleaf_client_id";
 let clientId = localStorage.getItem(CID_KEY);
@@ -23,7 +30,7 @@ if (!clientId) {
 }
 
 /* =========================
-   DOM 參照
+   DOM Elements
    ========================= */
 const elMessages = document.getElementById("messages");
 const elInput = document.getElementById("txtInput");
@@ -31,12 +38,12 @@ const elBtnSend = document.getElementById("btnSend");
 const elThinking = document.getElementById("thinking");
 
 /* =========================
-   訊息狀態
+   Message State
    ========================= */
 const messages = [];
 
 /* =========================
-   小工具
+   Utilities
    ========================= */
 const uid = () => Math.random().toString(36).slice(2);
 function scrollToBottom() {
@@ -44,7 +51,7 @@ function scrollToBottom() {
 }
 
 /**
- * 切換「思考中」動畫
+ * Toggle "Thinking" animation state
  */
 function setThinking(on) {
   if (!elThinking) return;
@@ -61,18 +68,21 @@ function setThinking(on) {
 }
 
 /**
- * 智能處理問號 (針對使用者輸入)
+ * Smart Question Mark Handling
  */
 function processQuestionMarks(text) {
   let result = text;
+  // Remove trailing question marks
   result = result.replace(/[?？]\s*$/g, '');
+  // Replace internal question marks with newlines
   result = result.replace(/[?？](?=.)/g, '\n');
+  // Clean up multiple newlines
   result = result.replace(/\n\s*\n/g, '\n');
   return result.trim();
 }
 
 /**
- * HTML 轉義 (防止 XSS)
+ * HTML Escape (for User Input Safety)
  */
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -81,7 +91,7 @@ function escapeHtml(text) {
 }
 
 /* =========================
-   將 messages 渲染到畫面
+   Render Messages
    ========================= */
 function render() {
   if (!elMessages) return;
@@ -90,33 +100,27 @@ function render() {
   for (const m of messages) {
     const isUser = m.role === "user";
 
-    // 外層一列
     const row = document.createElement("div");
     row.className = `msg ${isUser ? "user" : "bot"}`;
 
-    // 頭像
     const avatar = document.createElement("img");
     avatar.className = "avatar";
     avatar.src = isUser
       ? 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/user-avatar.png'
       : 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/logo.png';
-    avatar.alt = isUser ? "you" : "bot";
+    avatar.alt = isUser ? "You" : "Bot";
 
-    // 對話泡泡
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     
     if (isUser) {
-      // ★ 使用者訊息：為了安全，必須轉義 HTML，並將換行轉為 <br>
+      // User message: Escape HTML for security, convert newlines to <br>
       bubble.innerHTML = escapeHtml(m.text).replace(/\n/g, '<br>');
     } else {
-      // ★★★ 機器人訊息關鍵修改 ★★★
-      // 直接渲染後端回傳的 HTML，不進行轉義。
-      // 請確保 n8n 端回傳的 HTML 已經包含了正確的 <br> 或 <p> 標籤。
+      // Bot message: Render HTML directly (Table, List, Link support)
       bubble.innerHTML = m.text;
     }
 
-    // 組合
     row.appendChild(avatar);
     row.appendChild(bubble);
     elMessages.appendChild(row);
@@ -126,7 +130,7 @@ function render() {
 }
 
 /* =========================
-   呼叫後端邏輯
+   Send Logic
    ========================= */
 async function sendText(text) {
   const content = (text ?? elInput?.value ?? "").trim();
@@ -134,7 +138,7 @@ async function sendText(text) {
 
   const contentToSend = processQuestionMarks(content);
   
-  // 顯示使用者訊息
+  // Display user message immediately
   const userMsg = { id: uid(), role: "user", text: content, ts: Date.now() };
   messages.push(userMsg);
   if (elInput) elInput.value = "";
@@ -143,6 +147,7 @@ async function sendText(text) {
   setThinking(true);
 
   try {
+    // Send to backend
     const res = await fetch(api("/api/chat"), {
       method: "POST",
       headers: {
@@ -152,8 +157,8 @@ async function sendText(text) {
       body: JSON.stringify({ 
         text: contentToSend, 
         clientId, 
-        language: "英文",
-        role: "test"
+        language: "英文", // <--- Changed to English
+        role: "user"
       }),
     });
 
@@ -167,26 +172,26 @@ async function sendText(text) {
 
     if (!res.ok) {
       if (res.status === 502 || res.status === 404) {
-        throw new Error("網路不穩定，請再試一次!");
+        throw new Error("Network unstable, please try again.");
       }
       const serverMsg = (data && (data.error || data.body || data.message)) ?? raw ?? "unknown error";
       throw new Error(`HTTP ${res.status} ${res.statusText} — ${serverMsg}`);
     }
 
-    // 整理回覆文字 (HTML)
+    // Process Bot Response
     let replyText;
     
     if (typeof data === "string") {
-      replyText = data.trim() || "請換個說法，謝謝您";
+      replyText = data.trim() || "Please rephrase your question.";
     } else if (data && typeof data === "object") {
       const hasTextField = 'text' in data || 'message' in data;
       
       if (hasTextField) {
         const textValue = data.text !== undefined ? data.text : data.message;
         if (textValue === "" || textValue === null || textValue === undefined) {
-          replyText = "請換個說法，謝謝您";
+          replyText = "Please rephrase your question.";
         } else {
-          replyText = String(textValue).trim() || "請換個說法，謝謝您";
+          replyText = String(textValue).trim() || "Please rephrase your question.";
         }
       } else {
         const isPlainEmptyObject = 
@@ -194,16 +199,15 @@ async function sendText(text) {
           Object.keys(data).filter(k => k !== 'clientId').length === 0;
         
         if (isPlainEmptyObject) {
-          replyText = "網路不穩定，請再試一次";
+          replyText = "Network error, please try again.";
         } else {
           replyText = JSON.stringify(data, null, 2);
         }
       }
     } else {
-      replyText = "請換個說法，謝謝您";
+      replyText = "Please rephrase your question.";
     }
 
-    // 推入機器人訊息
     const botMsg = { id: uid(), role: "assistant", text: replyText, ts: Date.now() };
     messages.push(botMsg);
     
@@ -211,7 +215,7 @@ async function sendText(text) {
     render();
   } catch (err) {
     setThinking(false);
-    const friendly = (!navigator.onLine && "目前處於離線狀態，請檢查網路連線後再試一次") || `${err?.message || err}`;
+    const friendly = (!navigator.onLine && "You are currently offline. Please check your connection and try again.") || `${err?.message || err}`;
 
     const botErr = {
       id: uid(),
@@ -224,7 +228,9 @@ async function sendText(text) {
   }
 }
 
-// 事件綁定
+/* =========================
+   Event Listeners
+   ========================= */
 elBtnSend?.addEventListener("click", () => sendText());
 elInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
@@ -234,11 +240,13 @@ elInput?.addEventListener("keydown", (e) => {
 });
 window.addEventListener("load", () => elInput?.focus());
 
-// 歡迎訊息
+/* =========================
+   Initial Welcome Message
+   ========================= */
 messages.push({
   id: uid(),
   role: "assistant",
-  text: "歡迎來到臺北馬拉松智慧客服！<br>我是小幫手，隨時為您解答~ 有什麼問題可以為您解答的嗎?",
+  text: "Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?",
   ts: Date.now(),
 });
 render();
