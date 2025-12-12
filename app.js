@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with Retry & Language Selection (Modified v3)
+* app.js — Frontend Chat Logic with Enhanced Retry (Modified v3.1)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -10,6 +10,7 @@
 * 6) Batch text file upload - sends lines one by one
 * 7) Stop button to interrupt batch processing
 * 8) Auto-retry on "Failed to fetch" error (max 1 retry)
+* 9) Auto-retry on "Please rephrase your question" error (max 1 retry)
 */
 
 "use strict";
@@ -161,7 +162,7 @@ function render() {
 }
 
 /* =========================
-Send Logic with Retry
+Send Logic with Enhanced Retry
 ========================= */
 async function sendText(text, skipProcessing = false, isRetry = false) {
   const content = (text ?? elInput?.value ?? "").trim();
@@ -239,6 +240,35 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
       replyText = "Please rephrase your question.";
     }
 
+    // Check if response is "Please rephrase your question" error
+    const isRephraseError = replyText.includes("Please rephrase your question");
+
+    // Retry logic for rephrase error: if not already a retry
+    if (isRephraseError && !isRetry) {
+      console.log('🔄 "Please rephrase" error detected, retrying once...');
+
+      // Show retry message
+      const retryMsg = {
+        id: uid(),
+        role: "assistant",
+        text: "🔄 系統回應異常，正在重試...",
+        ts: Date.now(),
+      };
+      messages.push(retryMsg);
+      render();
+
+      // Wait a moment before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Retry the request
+      return sendText(content, skipProcessing, true);
+    }
+
+    // If it's a retry and still got rephrase error, show special message
+    if (isRephraseError && isRetry) {
+      replyText = "❌ 系統無法處理此問題（已重試），跳過此問題";
+    }
+
     const botMsg = { id: uid(), role: "assistant", text: replyText, ts: Date.now() };
     messages.push(botMsg);
     setThinking(false);
@@ -246,7 +276,13 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
 
     // Continue batch processing if active and not stopped
     if (isBatchProcessing && !shouldStopBatch) {
-      processBatchNext();
+      // If retry failed with rephrase error, skip to next
+      if (isRephraseError && isRetry) {
+        console.log('⏭️ Skipping to next question after retry failure');
+        processBatchNext();
+      } else if (!isRephraseError) {
+        processBatchNext();
+      }
     } else if (shouldStopBatch) {
       // User requested stop
       stopBatchProcessing(true);
