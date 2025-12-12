@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with Enhanced Retry (Modified v3.1)
+* app.js — Frontend Chat Logic with Batch Delay (Modified v3.2)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -11,6 +11,7 @@
 * 7) Stop button to interrupt batch processing
 * 8) Auto-retry on "Failed to fetch" error (max 1 retry)
 * 9) Auto-retry on "Please rephrase your question" error (max 1 retry)
+* 10) 1-second delay between batch messages
 */
 
 "use strict";
@@ -279,8 +280,13 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
       // If retry failed with rephrase error, skip to next
       if (isRephraseError && isRetry) {
         console.log('⏭️ Skipping to next question after retry failure');
+        // Wait 1 second before next message in batch mode
+        await new Promise(resolve => setTimeout(resolve, 1000));
         processBatchNext();
       } else if (!isRephraseError) {
+        // Wait 1 second before next message in batch mode
+        console.log('⏸️ Waiting 1 second before next batch message...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
         processBatchNext();
       }
     } else if (shouldStopBatch) {
@@ -335,6 +341,8 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
     // In batch mode: continue to next question if retry also failed
     if (isBatchProcessing && isFetchError && isRetry) {
       console.log('⏭️ Skipping to next question after retry failure');
+      // Wait 1 second before next message in batch mode
+      await new Promise(resolve => setTimeout(resolve, 1000));
       if (!shouldStopBatch) {
         processBatchNext();
       } else {
@@ -417,7 +425,7 @@ function startBatchProcessing(lines) {
   const startMsg = {
     id: uid(),
     role: "assistant",
-    text: `📋 開始批次處理，共 ${lines.length} 行問題`,
+    text: `📋 開始批次處理，共 ${lines.length} 行問題<br>⏱️ 每次回應後將等待 1 秒再發送下一題`,
     ts: Date.now(),
   };
   messages.push(startMsg);
