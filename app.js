@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with Batch Upload (Modified)
+* app.js — Frontend Chat Logic with Batch Upload (Modified v2)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -8,6 +8,7 @@
 * 4) Backend API integration with English response request
 * 5) HTML rendering support for rich text responses
 * 6) Batch text file upload - sends lines one by one
+* 7) Stop button to interrupt batch processing
 */
 
 "use strict";
@@ -37,6 +38,7 @@ const elMessages = document.getElementById("messages");
 const elInput = document.getElementById("txtInput");
 const elBtnSend = document.getElementById("btnSend");
 const elBtnUpload = document.getElementById("btnUpload");
+const elBtnStop = document.getElementById("btnStop");
 const elFileInput = document.getElementById("fileInput");
 const elThinking = document.getElementById("thinking");
 
@@ -51,6 +53,7 @@ Batch Processing State
 let batchLines = [];
 let batchIndex = 0;
 let isBatchProcessing = false;
+let shouldStopBatch = false;
 
 /* =========================
 Utilities
@@ -73,10 +76,24 @@ function setThinking(on) {
     if (elInput) elInput.disabled = true;
   } else {
     elThinking.classList.add("hidden");
-    if (elBtnSend) elBtnSend.disabled = false;
-    if (elBtnUpload) elBtnUpload.disabled = false;
-    if (elInput) elInput.disabled = false;
-    elInput?.focus();
+    if (!isBatchProcessing) {
+      if (elBtnSend) elBtnSend.disabled = false;
+      if (elBtnUpload) elBtnUpload.disabled = false;
+      if (elInput) elInput.disabled = false;
+      elInput?.focus();
+    }
+  }
+}
+
+/**
+* Update Stop button state
+*/
+function updateStopButton() {
+  if (!elBtnStop) return;
+  if (isBatchProcessing) {
+    elBtnStop.disabled = false;
+  } else {
+    elBtnStop.disabled = true;
   }
 }
 
@@ -220,9 +237,12 @@ async function sendText(text, skipProcessing = false) {
     setThinking(false);
     render();
 
-    // Continue batch processing if active
-    if (isBatchProcessing) {
+    // Continue batch processing if active and not stopped
+    if (isBatchProcessing && !shouldStopBatch) {
       processBatchNext();
+    } else if (shouldStopBatch) {
+      // User requested stop
+      stopBatchProcessing(true);
     }
 
   } catch (err) {
@@ -239,15 +259,7 @@ async function sendText(text, skipProcessing = false) {
 
     // Stop batch processing on error
     if (isBatchProcessing) {
-      stopBatchProcessing();
-      const errorMsg = {
-        id: uid(),
-        role: "assistant",
-        text: "⚠️ 批次處理因錯誤中止",
-        ts: Date.now(),
-      };
-      messages.push(errorMsg);
-      render();
+      stopBatchProcessing(false, true);
     }
   }
 }
@@ -256,16 +268,14 @@ async function sendText(text, skipProcessing = false) {
 Batch Processing Functions
 ========================= */
 function processBatchNext() {
+  // Check if user requested stop
+  if (shouldStopBatch) {
+    stopBatchProcessing(true);
+    return;
+  }
+
   if (batchIndex >= batchLines.length) {
-    stopBatchProcessing();
-    const completeMsg = {
-      id: uid(),
-      role: "assistant",
-      text: `✅ 批次處理完成！共處理 ${batchLines.length} 行`,
-      ts: Date.now(),
-    };
-    messages.push(completeMsg);
-    render();
+    stopBatchProcessing(false, false, true);
     return;
   }
 
@@ -281,16 +291,45 @@ function processBatchNext() {
   }
 }
 
-function stopBatchProcessing() {
+function stopBatchProcessing(userStopped = false, hasError = false, completed = false) {
   isBatchProcessing = false;
+  shouldStopBatch = false;
+  const processedCount = batchIndex;
+  const totalCount = batchLines.length;
   batchLines = [];
   batchIndex = 0;
+
+  updateStopButton();
+  setThinking(false);
+
+  let statusMsg;
+  if (userStopped) {
+    statusMsg = `⏸️ 批次處理已中斷！已處理 ${processedCount}/${totalCount} 行`;
+  } else if (hasError) {
+    statusMsg = `⚠️ 批次處理因錯誤中止！已處理 ${processedCount}/${totalCount} 行`;
+  } else if (completed) {
+    statusMsg = `✅ 批次處理完成！共處理 ${totalCount} 行`;
+  }
+
+  if (statusMsg) {
+    const msg = {
+      id: uid(),
+      role: "assistant",
+      text: statusMsg,
+      ts: Date.now(),
+    };
+    messages.push(msg);
+    render();
+  }
 }
 
 function startBatchProcessing(lines) {
   batchLines = lines;
   batchIndex = 0;
   isBatchProcessing = true;
+  shouldStopBatch = false;
+
+  updateStopButton();
 
   const startMsg = {
     id: uid(),
@@ -360,6 +399,20 @@ elBtnSend?.addEventListener("click", () => {
 elBtnUpload?.addEventListener("click", () => {
   if (!isBatchProcessing) {
     elFileInput?.click();
+  }
+});
+
+elBtnStop?.addEventListener("click", () => {
+  if (isBatchProcessing) {
+    shouldStopBatch = true;
+    const stopMsg = {
+      id: uid(),
+      role: "assistant",
+      text: "⏸️ 正在中斷批次處理，請稍候...",
+      ts: Date.now(),
+    };
+    messages.push(stopMsg);
+    render();
   }
 });
 
