@@ -184,7 +184,7 @@ async function sendText(text, skipProcessing = false) {
       body: JSON.stringify({
         text: contentToSend,
         clientId,
-        language: "英文",
+        language: "繁體中文",
         role: "user"
       }),
     });
