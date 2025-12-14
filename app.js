@@ -14,7 +14,7 @@
 * 10) 1-second delay between batch messages
 * 11) Question mark processing for both single and batch mode
 * 12) Ask user which question to start from after file upload
-* 13) Dynamic API server selection
+* 13) Dynamic API base URL selection
 */
 
 "use strict";
@@ -22,13 +22,8 @@
 /* =========================
 Backend API Configuration
 ========================= */
-// API_BASE is now dynamic - read from API selector
-function getApiBase() {
-  const elApiSelect = document.getElementById("apiSelect");
-  return elApiSelect?.value || "https://taipei-marathon-ai-test-server.onrender.com";
-}
-
-const api = (p) => `${getApiBase()}${p}`;
+let API_BASE = "https://taipei-marathon-ai-test-server.onrender.com"; // Default
+const api = (p) => `${API_BASE}${p}`;
 
 /* =========================
 Client ID Management
@@ -52,8 +47,8 @@ const elBtnUpload = document.getElementById("btnUpload");
 const elBtnStop = document.getElementById("btnStop");
 const elFileInput = document.getElementById("fileInput");
 const elThinking = document.getElementById("thinking");
-const elLangSelect = document.getElementById("langSelect");
 const elApiSelect = document.getElementById("apiSelect");
+const elLangSelect = document.getElementById("langSelect");
 
 /* =========================
 Message State
@@ -79,14 +74,6 @@ function scrollToBottom() {
 }
 
 /**
-* Get API server display name
-*/
-function getApiServerName() {
-  const elApiSelect = document.getElementById("apiSelect");
-  return elApiSelect?.selectedOptions[0]?.text || "未知伺服器";
-}
-
-/**
 * Toggle "Thinking" animation state
 */
 function setThinking(on) {
@@ -95,16 +82,16 @@ function setThinking(on) {
     elThinking.classList.remove("hidden");
     if (elBtnSend) elBtnSend.disabled = true;
     if (elBtnUpload) elBtnUpload.disabled = true;
-    if (elLangSelect) elLangSelect.disabled = true;
     if (elApiSelect) elApiSelect.disabled = true;
+    if (elLangSelect) elLangSelect.disabled = true;
     if (elInput) elInput.disabled = true;
   } else {
     elThinking.classList.add("hidden");
     if (!isBatchProcessing && !pendingBatchLines) {
       if (elBtnSend) elBtnSend.disabled = false;
       if (elBtnUpload) elBtnUpload.disabled = false;
-      if (elLangSelect) elLangSelect.disabled = false;
       if (elApiSelect) elApiSelect.disabled = false;
+      if (elLangSelect) elLangSelect.disabled = false;
       if (elInput) elInput.disabled = false;
       elInput?.focus();
     }
@@ -200,7 +187,7 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
 
   // Always process question marks (removed skipProcessing condition)
   const contentToSend = processQuestionMarks(content);
-  const selectedLanguage = elLangSelect?.value || "英文";
+  const selectedLanguage = elLangSelect?.value || "繁體中文";
 
   // Display user message immediately (only on first attempt, not retry)
   if (!isRetry) {
@@ -426,8 +413,8 @@ function handleStartQuestionResponse(input) {
   // Enable controls
   if (elBtnSend) elBtnSend.disabled = false;
   if (elBtnUpload) elBtnUpload.disabled = false;
-  if (elLangSelect) elLangSelect.disabled = false;
   if (elApiSelect) elApiSelect.disabled = false;
+  if (elLangSelect) elLangSelect.disabled = false;
   if (elInput) {
     elInput.disabled = false;
     elInput.placeholder = "請輸入您的問題...";
@@ -505,11 +492,10 @@ function startBatchProcessing(lines, startFrom = 1) {
   updateStopButton();
 
   const actualCount = lines.length - batchIndex;
-  const apiServerName = getApiServerName();
   const startMsg = {
     id: uid(),
     role: "assistant",
-    text: `📋 開始批次處理，從第 ${startFrom} 個問題開始，共 ${actualCount} 個問題<br>🌐 API 伺服器：${apiServerName}<br>⏱️ 每次回應後將等待 1 秒再發送下一題<br>✂️ 自動移除問號 "?" 並將句中問號轉換為換行`,
+    text: `📋 開始批次處理，從第 ${startFrom} 個問題開始，共 ${actualCount} 個問題<br>⏱️ 每次回應後將等待 1 秒再發送下一題<br>✂️ 自動移除問號 "?" 並將句中問號轉換為換行`,
     ts: Date.now(),
   };
   messages.push(startMsg);
@@ -554,10 +540,10 @@ function handleFileUpload(event) {
     messages.push(promptMsg);
     render();
 
-    // Disable upload button and API selector, enable input
+    // Disable upload button and enable input
     if (elBtnUpload) elBtnUpload.disabled = true;
-    if (elLangSelect) elLangSelect.disabled = true;
     if (elApiSelect) elApiSelect.disabled = true;
+    if (elLangSelect) elLangSelect.disabled = true;
     if (elInput) {
       elInput.disabled = false;
       elInput.placeholder = `請輸入 1-${lines.length} 之間的數字...`;
@@ -583,20 +569,24 @@ function handleFileUpload(event) {
 }
 
 /* =========================
-API Selector Change Handler
+API Selection Handler
 ========================= */
 function handleApiChange() {
-  const apiServerName = getApiServerName();
-  const apiUrl = getApiBase();
+  if (elApiSelect) {
+    API_BASE = elApiSelect.value;
+    console.log(`🔄 API Base changed to: ${API_BASE}`);
 
-  const changeMsg = {
-    id: uid(),
-    role: "assistant",
-    text: `🌐 已切換至：<strong>${apiServerName}</strong><br><small>API URL: ${apiUrl}</small>`,
-    ts: Date.now(),
-  };
-  messages.push(changeMsg);
-  render();
+    // Show notification to user
+    const apiName = elApiSelect.options[elApiSelect.selectedIndex].text;
+    const notifyMsg = {
+      id: uid(),
+      role: "assistant",
+      text: `🔄 已切換至：${apiName}`,
+      ts: Date.now(),
+    };
+    messages.push(notifyMsg);
+    render();
+  }
 }
 
 /* =========================
@@ -646,11 +636,10 @@ window.addEventListener("load", () => elInput?.focus());
 /* =========================
 Initial Welcome Message
 ========================= */
-const initialApiServerName = getApiServerName();
 messages.push({
   id: uid(),
   role: "assistant",
-  text: `Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br><br>🌐 當前 API 伺服器：<strong>${initialApiServerName}</strong><br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問`,
+  text: "Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br><br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問",
   ts: Date.now(),
 });
 render();
