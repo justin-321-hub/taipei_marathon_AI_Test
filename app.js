@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with Batch Delay (Modified v3.2)
+* app.js — Frontend Chat Logic with Dynamic API Selection (Modified v3.5)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -12,6 +12,9 @@
 * 8) Auto-retry on "Failed to fetch" error (max 1 retry)
 * 9) Auto-retry on "Please rephrase your question" error (max 1 retry)
 * 10) 1-second delay between batch messages
+* 11) Question mark processing for both single and batch mode
+* 12) Ask user which question to start from after file upload
+* 13) Dynamic API server selection
 */
 
 "use strict";
@@ -19,8 +22,13 @@
 /* =========================
 Backend API Configuration
 ========================= */
-const API_BASE = "https://taipei-marathon-ai-test-server.onrender.com";
-const api = (p) => `${API_BASE}${p}`;
+// API_BASE is now dynamic - read from API selector
+function getApiBase() {
+  const elApiSelect = document.getElementById("apiSelect");
+  return elApiSelect?.value || "https://taipei-marathon-ai-test-server.onrender.com";
+}
+
+const api = (p) => `${getApiBase()}${p}`;
 
 /* =========================
 Client ID Management
@@ -45,6 +53,7 @@ const elBtnStop = document.getElementById("btnStop");
 const elFileInput = document.getElementById("fileInput");
 const elThinking = document.getElementById("thinking");
 const elLangSelect = document.getElementById("langSelect");
+const elApiSelect = document.getElementById("apiSelect");
 
 /* =========================
 Message State
@@ -58,6 +67,7 @@ let batchLines = [];
 let batchIndex = 0;
 let isBatchProcessing = false;
 let shouldStopBatch = false;
+let pendingBatchLines = null; // Store lines while waiting for user input
 
 /* =========================
 Utilities
@@ -66,6 +76,14 @@ const uid = () => Math.random().toString(36).slice(2);
 
 function scrollToBottom() {
   elMessages?.scrollTo({ top: elMessages.scrollHeight, behavior: "smooth" });
+}
+
+/**
+* Get API server display name
+*/
+function getApiServerName() {
+  const elApiSelect = document.getElementById("apiSelect");
+  return elApiSelect?.selectedOptions[0]?.text || "未知伺服器";
 }
 
 /**
@@ -78,13 +96,15 @@ function setThinking(on) {
     if (elBtnSend) elBtnSend.disabled = true;
     if (elBtnUpload) elBtnUpload.disabled = true;
     if (elLangSelect) elLangSelect.disabled = true;
+    if (elApiSelect) elApiSelect.disabled = true;
     if (elInput) elInput.disabled = true;
   } else {
     elThinking.classList.add("hidden");
-    if (!isBatchProcessing) {
+    if (!isBatchProcessing && !pendingBatchLines) {
       if (elBtnSend) elBtnSend.disabled = false;
       if (elBtnUpload) elBtnUpload.disabled = false;
       if (elLangSelect) elLangSelect.disabled = false;
+      if (elApiSelect) elApiSelect.disabled = false;
       if (elInput) elInput.disabled = false;
       elInput?.focus();
     }
@@ -105,6 +125,9 @@ function updateStopButton() {
 
 /**
 * Smart Question Mark Handling
+* - Remove trailing question marks
+* - Replace internal question marks with newlines
+* - Clean up multiple newlines
 */
 function processQuestionMarks(text) {
   let result = text;
@@ -169,7 +192,14 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
   const content = (text ?? elInput?.value ?? "").trim();
   if (!content) return;
 
-  const contentToSend = skipProcessing ? content : processQuestionMarks(content);
+  // Check if user is responding to start question prompt
+  if (pendingBatchLines) {
+    handleStartQuestionResponse(content);
+    return;
+  }
+
+  // Always process question marks (removed skipProcessing condition)
+  const contentToSend = processQuestionMarks(content);
   const selectedLanguage = elLangSelect?.value || "英文";
 
   // Display user message immediately (only on first attempt, not retry)
@@ -356,6 +386,58 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
 }
 
 /* =========================
+Start Question Prompt Handler
+========================= */
+function handleStartQuestionResponse(input) {
+  const startNum = parseInt(input.trim());
+
+  // Display user input
+  const userMsg = { id: uid(), role: "user", text: input, ts: Date.now() };
+  messages.push(userMsg);
+  if (elInput) elInput.value = "";
+  render();
+
+  // Validate input
+  if (isNaN(startNum) || startNum < 1 || startNum > pendingBatchLines.length) {
+    const errorMsg = {
+      id: uid(),
+      role: "assistant",
+      text: `❌ 無效的數字！請輸入 1 到 ${pendingBatchLines.length} 之間的數字。`,
+      ts: Date.now(),
+    };
+    messages.push(errorMsg);
+    render();
+    return;
+  }
+
+  // Valid input - start batch processing
+  const lines = pendingBatchLines;
+  pendingBatchLines = null;
+
+  const confirmMsg = {
+    id: uid(),
+    role: "assistant",
+    text: `✅ 將從第 ${startNum} 個問題開始處理，共 ${lines.length - startNum + 1} 個問題。`,
+    ts: Date.now(),
+  };
+  messages.push(confirmMsg);
+  render();
+
+  // Enable controls
+  if (elBtnSend) elBtnSend.disabled = false;
+  if (elBtnUpload) elBtnUpload.disabled = false;
+  if (elLangSelect) elLangSelect.disabled = false;
+  if (elApiSelect) elApiSelect.disabled = false;
+  if (elInput) {
+    elInput.disabled = false;
+    elInput.placeholder = "請輸入您的問題...";
+  }
+
+  // Start batch processing from the specified question
+  startBatchProcessing(lines, startNum);
+}
+
+/* =========================
 Batch Processing Functions
 ========================= */
 function processBatchNext() {
@@ -374,8 +456,8 @@ function processBatchNext() {
   batchIndex++;
 
   if (line) {
-    // Send the line (without question mark processing for batch)
-    sendText(line, true);
+    // Send the line (now with question mark processing)
+    sendText(line, false);
   } else {
     // Skip empty lines
     processBatchNext();
@@ -395,11 +477,11 @@ function stopBatchProcessing(userStopped = false, hasError = false, completed = 
 
   let statusMsg;
   if (userStopped) {
-    statusMsg = `⏸️ 批次處理已中斷！已處理 ${processedCount}/${totalCount} 行`;
+    statusMsg = `⏸️ 批次處理已中斷！已處理 ${processedCount}/${totalCount} 個問題`;
   } else if (hasError) {
-    statusMsg = `⚠️ 批次處理因錯誤中止！已處理 ${processedCount}/${totalCount} 行`;
+    statusMsg = `⚠️ 批次處理因錯誤中止！已處理 ${processedCount}/${totalCount} 個問題`;
   } else if (completed) {
-    statusMsg = `✅ 批次處理完成！共處理 ${totalCount} 行`;
+    statusMsg = `✅ 批次處理完成！共處理 ${totalCount} 個問題`;
   }
 
   if (statusMsg) {
@@ -414,18 +496,20 @@ function stopBatchProcessing(userStopped = false, hasError = false, completed = 
   }
 }
 
-function startBatchProcessing(lines) {
+function startBatchProcessing(lines, startFrom = 1) {
   batchLines = lines;
-  batchIndex = 0;
+  batchIndex = startFrom - 1; // Convert to 0-based index
   isBatchProcessing = true;
   shouldStopBatch = false;
 
   updateStopButton();
 
+  const actualCount = lines.length - batchIndex;
+  const apiServerName = getApiServerName();
   const startMsg = {
     id: uid(),
     role: "assistant",
-    text: `📋 開始批次處理，共 ${lines.length} 行問題<br>⏱️ 每次回應後將等待 1 秒再發送下一題`,
+    text: `📋 開始批次處理，從第 ${startFrom} 個問題開始，共 ${actualCount} 個問題<br>🌐 API 伺服器：${apiServerName}<br>⏱️ 每次回應後將等待 1 秒再發送下一題<br>✂️ 自動移除問號 "?" 並將句中問號轉換為換行`,
     ts: Date.now(),
   };
   messages.push(startMsg);
@@ -458,7 +542,27 @@ function handleFileUpload(event) {
       return;
     }
 
-    startBatchProcessing(lines);
+    // Store lines and ask user which question to start from
+    pendingBatchLines = lines;
+
+    const promptMsg = {
+      id: uid(),
+      role: "assistant",
+      text: `📁 已讀取文件，共 ${lines.length} 個問題。<br><br>❓ 請輸入要從第幾個問題開始處理（1-${lines.length}）：<br><small>💡 輸入 1 表示從第一個問題開始，輸入 ${lines.length} 表示只處理最後一個問題</small>`,
+      ts: Date.now(),
+    };
+    messages.push(promptMsg);
+    render();
+
+    // Disable upload button and API selector, enable input
+    if (elBtnUpload) elBtnUpload.disabled = true;
+    if (elLangSelect) elLangSelect.disabled = true;
+    if (elApiSelect) elApiSelect.disabled = true;
+    if (elInput) {
+      elInput.disabled = false;
+      elInput.placeholder = `請輸入 1-${lines.length} 之間的數字...`;
+      elInput.focus();
+    }
   };
 
   reader.onerror = function() {
@@ -479,6 +583,23 @@ function handleFileUpload(event) {
 }
 
 /* =========================
+API Selector Change Handler
+========================= */
+function handleApiChange() {
+  const apiServerName = getApiServerName();
+  const apiUrl = getApiBase();
+
+  const changeMsg = {
+    id: uid(),
+    role: "assistant",
+    text: `🌐 已切換至：<strong>${apiServerName}</strong><br><small>API URL: ${apiUrl}</small>`,
+    ts: Date.now(),
+  };
+  messages.push(changeMsg);
+  render();
+}
+
+/* =========================
 Event Listeners
 ========================= */
 elBtnSend?.addEventListener("click", () => {
@@ -488,7 +609,7 @@ elBtnSend?.addEventListener("click", () => {
 });
 
 elBtnUpload?.addEventListener("click", () => {
-  if (!isBatchProcessing) {
+  if (!isBatchProcessing && !pendingBatchLines) {
     elFileInput?.click();
   }
 });
@@ -509,6 +630,8 @@ elBtnStop?.addEventListener("click", () => {
 
 elFileInput?.addEventListener("change", handleFileUpload);
 
+elApiSelect?.addEventListener("change", handleApiChange);
+
 elInput?.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -523,10 +646,11 @@ window.addEventListener("load", () => elInput?.focus());
 /* =========================
 Initial Welcome Message
 ========================= */
+const initialApiServerName = getApiServerName();
 messages.push({
   id: uid(),
   role: "assistant",
-  text: "Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br><br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問",
+  text: `Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br><br>🌐 當前 API 伺服器：<strong>${initialApiServerName}</strong><br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問`,
   ts: Date.now(),
 });
 render();
