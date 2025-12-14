@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with API Selector (Modified v3.5)
+* app.js — Frontend Chat Logic with Batch Question Mark Processing (Modified v3.3)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -10,7 +10,9 @@
 * 6) Batch text file upload - sends lines one by one
 * 7) Stop button to interrupt batch processing
 * 8) Auto-retry on "Failed to fetch" error (max 1 retry)
-* 9) Dynamic API endpoint selection
+* 9) Auto-retry on "Please rephrase your question" error (max 1 retry)
+* 10) 1-second delay between batch messages
+* 11) Question mark processing for both single and batch mode
 */
 
 "use strict";
@@ -18,7 +20,7 @@
 /* =========================
 Backend API Configuration
 ========================= */
-let API_BASE = "https://taipei-marathon-ai-test-server.onrender.com"; // Default
+const API_BASE = "https://taipei-marathon-ai-test-server.onrender.com";
 const api = (p) => `${API_BASE}${p}`;
 
 /* =========================
@@ -44,7 +46,6 @@ const elBtnStop = document.getElementById("btnStop");
 const elFileInput = document.getElementById("fileInput");
 const elThinking = document.getElementById("thinking");
 const elLangSelect = document.getElementById("langSelect");
-const elApiSelect = document.getElementById("apiSelect");
 
 /* =========================
 Message State
@@ -78,7 +79,6 @@ function setThinking(on) {
     if (elBtnSend) elBtnSend.disabled = true;
     if (elBtnUpload) elBtnUpload.disabled = true;
     if (elLangSelect) elLangSelect.disabled = true;
-    if (elApiSelect) elApiSelect.disabled = true;
     if (elInput) elInput.disabled = true;
   } else {
     elThinking.classList.add("hidden");
@@ -86,7 +86,6 @@ function setThinking(on) {
       if (elBtnSend) elBtnSend.disabled = false;
       if (elBtnUpload) elBtnUpload.disabled = false;
       if (elLangSelect) elLangSelect.disabled = false;
-      if (elApiSelect) elApiSelect.disabled = false;
       if (elInput) elInput.disabled = false;
       elInput?.focus();
     }
@@ -107,6 +106,9 @@ function updateStopButton() {
 
 /**
 * Smart Question Mark Handling
+* - Remove trailing question marks
+* - Replace internal question marks with newlines
+* - Clean up multiple newlines
 */
 function processQuestionMarks(text) {
   let result = text;
@@ -165,13 +167,14 @@ function render() {
 }
 
 /* =========================
-Send Logic with Retry
+Send Logic with Enhanced Retry
 ========================= */
 async function sendText(text, skipProcessing = false, isRetry = false) {
   const content = (text ?? elInput?.value ?? "").trim();
   if (!content) return;
 
-  const contentToSend = skipProcessing ? content : processQuestionMarks(content);
+  // Always process question marks (removed skipProcessing condition)
+  const contentToSend = processQuestionMarks(content);
   const selectedLanguage = elLangSelect?.value || "英文";
 
   // Display user message immediately (only on first attempt, not retry)
@@ -185,7 +188,7 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
   setThinking(true);
 
   try {
-    // Send to backend (使用動態的 API_BASE)
+    // Send to backend
     const res = await fetch(api("/api/chat"), {
       method: "POST",
       headers: {
@@ -243,6 +246,35 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
       replyText = "Please rephrase your question.";
     }
 
+    // Check if response is "Please rephrase your question" error
+    const isRephraseError = replyText.includes("Please rephrase your question");
+
+    // Retry logic for rephrase error: if not already a retry
+    if (isRephraseError && !isRetry) {
+      console.log('🔄 "Please rephrase" error detected, retrying once...');
+
+      // Show retry message
+      const retryMsg = {
+        id: uid(),
+        role: "assistant",
+        text: "🔄 系統回應異常，正在重試...",
+        ts: Date.now(),
+      };
+      messages.push(retryMsg);
+      render();
+
+      // Wait a moment before retrying
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Retry the request
+      return sendText(content, skipProcessing, true);
+    }
+
+    // If it's a retry and still got rephrase error, show special message
+    if (isRephraseError && isRetry) {
+      replyText = "❌ 系統無法處理此問題（已重試），跳過此問題";
+    }
+
     const botMsg = { id: uid(), role: "assistant", text: replyText, ts: Date.now() };
     messages.push(botMsg);
     setThinking(false);
@@ -250,7 +282,18 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
 
     // Continue batch processing if active and not stopped
     if (isBatchProcessing && !shouldStopBatch) {
-      processBatchNext();
+      // If retry failed with rephrase error, skip to next
+      if (isRephraseError && isRetry) {
+        console.log('⏭️ Skipping to next question after retry failure');
+        // Wait 1 second before next message in batch mode
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        processBatchNext();
+      } else if (!isRephraseError) {
+        // Wait 1 second before next message in batch mode
+        console.log('⏸️ Waiting 1 second before next batch message...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        processBatchNext();
+      }
     } else if (shouldStopBatch) {
       // User requested stop
       stopBatchProcessing(true);
@@ -303,6 +346,8 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
     // In batch mode: continue to next question if retry also failed
     if (isBatchProcessing && isFetchError && isRetry) {
       console.log('⏭️ Skipping to next question after retry failure');
+      // Wait 1 second before next message in batch mode
+      await new Promise(resolve => setTimeout(resolve, 1000));
       if (!shouldStopBatch) {
         processBatchNext();
       } else {
@@ -334,8 +379,8 @@ function processBatchNext() {
   batchIndex++;
 
   if (line) {
-    // Send the line (without question mark processing for batch)
-    sendText(line, true);
+    // Send the line (now with question mark processing)
+    sendText(line, false);
   } else {
     // Skip empty lines
     processBatchNext();
@@ -385,7 +430,7 @@ function startBatchProcessing(lines) {
   const startMsg = {
     id: uid(),
     role: "assistant",
-    text: `📋 開始批次處理，共 ${lines.length} 行問題`,
+    text: `📋 開始批次處理，共 ${lines.length} 行問題<br>⏱️ 每次回應後將等待 1 秒再發送下一題<br>✂️ 自動移除問號 "?" 並將句中問號轉換為換行`,
     ts: Date.now(),
   };
   messages.push(startMsg);
@@ -437,24 +482,6 @@ function handleFileUpload(event) {
   // Reset file input
   event.target.value = '';
 }
-
-/* =========================
-API Selection Handler
-========================= */
-elApiSelect?.addEventListener("change", () => {
-  API_BASE = elApiSelect.value;
-  console.log(`🔄 API endpoint changed to: ${API_BASE}`);
-
-  // Show notification
-  const notifyMsg = {
-    id: uid(),
-    role: "assistant",
-    text: `🔄 已切換到：${elApiSelect.options[elApiSelect.selectedIndex].text}`,
-    ts: Date.now(),
-  };
-  messages.push(notifyMsg);
-  render();
-});
 
 /* =========================
 Event Listeners
