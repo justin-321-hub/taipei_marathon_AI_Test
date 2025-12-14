@@ -2,72 +2,56 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>台北馬拉松 AI 客服測試介面</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>台北馬拉松 AI 客服</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="container">
+  <div id="container">
     <!-- Header -->
-    <div class="header">
-      <img 
-        src="https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/logo.png" 
-        alt="Taipei Marathon Logo"
-        class="header-logo"
+    <header>
+      <img
+        src="https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/logo.png"
+        alt="Logo"
+        class="logo"
       />
-      <h1>台北馬拉松 AI 智慧客服</h1>
+      <h1>台北馬拉松 AI 客服</h1>
+    </header>
+
+    <!-- Messages -->
+    <div id="messages"></div>
+
+    <!-- Thinking -->
+    <div id="thinking" class="hidden">
+      <div class="bubble thinking-bubble">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+      </div>
+      <div class="thinking-text">客服正在思考，快出來了！</div>
     </div>
 
-    <!-- Messages Container -->
-    <div id="messages" class="messages"></div>
-
-    <!-- Thinking Indicator -->
-    <div id="thinking" class="thinking hidden">
-      <div class="thinking-dots">
-        <span></span>
-        <span></span>
-        <span></span>
-      </div>
-      <p>客服正在思考，快出來了！</p>
-    </div>
-
-    <!-- Input Area -->
-    <div class="input-area">
-      <!-- Controls Row -->
-      <div class="controls-row">
-        <!-- API Server Selector (NEW) -->
-        <select id="apiSelect" class="api-select">
-          <option value="https://taipei-marathon-ai-test-server.onrender.com">台北馬測試</option>
-          <option value="https://taipei-marathon-server.onrender.com">台北馬正式</option>
-          <option value="https://standard-chartered-taipei-charity.onrender.com">渣打馬正式</option>
-        </select>
-
-        <!-- Language Selector -->
-        <select id="langSelect" class="lang-select">
-          <option value="英文">English</option>
-          <option value="繁體中文" selected>繁體中文</option>
-          <option value="簡體中文">简体中文</option>
-          <option value="日文">日本語</option>
-          <option value="韓文">한국어</option>
-        </select>
-
-        <!-- Upload Button -->
-        <button id="btnUpload" class="btn-upload">📤 上傳</button>
-        <input type="file" id="fileInput" accept=".txt" style="display: none;" />
-
-        <!-- Stop Button -->
-        <button id="btnStop" class="btn-stop" disabled>⏸️ 中斷</button>
-      </div>
-
-      <!-- Input Row -->
-      <div class="input-row">
-        <textarea 
-          id="txtInput" 
-          placeholder="請輸入您的問題..." 
-          rows="1"
-        ></textarea>
-        <button id="btnSend" class="btn-send">送出</button>
-      </div>
+    <!-- Controls -->
+    <div id="controls">
+      <select id="apiSelect">
+        <option value="https://taipei-marathon-ai-test-server.onrender.com">台北馬測試</option>
+        <option value="https://taipei-marathon-server.onrender.com">台北馬正式</option>
+        <option value="https://standard-chartered-taipei-charity.onrender.com">渣打馬正式</option>
+      </select>
+      <select id="langSelect">
+        <option value="繁體中文">繁體中文</option>
+        <option value="English">English</option>
+        <option value="日本語">日本語</option>
+      </select>
+      <textarea
+        id="txtInput"
+        rows="2"
+        placeholder="請輸入您的問題..."
+      ></textarea>
+      <button id="btnSend">送出</button>
+      <button id="btnUpload">📤 上傳</button>
+      <button id="btnStop" disabled>⏸️ 中斷</button>
+      <input type="file" id="fileInput" accept=".txt" style="display: none;" />
     </div>
   </div>
 
