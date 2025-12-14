@@ -1,63 +1,74 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>台北馬拉松智慧客服 — Taipei Marathon AI</title>
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>台北馬拉松 AI 客服測試介面</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
-  <!-- 頂部列 -->
-  <header class="topbar">
-    <img class="logo" 
-         src="https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/logo.png" 
-         alt="Logo">
-    <div class="brand">
-      <div class="title">台北馬拉松智慧客服</div>
-      <div class="subtitle">Taipei Marathon Smart Service</div>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <img 
+        src="https://raw.githubusercontent.com/justin-321-hub/taipei_marathon/refs/heads/main/assets/logo.png" 
+        alt="Taipei Marathon Logo"
+        class="header-logo"
+      />
+      <h1>台北馬拉松 AI 智慧客服</h1>
     </div>
-  </header>
 
-  <!-- 主體 -->
-  <main class="main">
-    <!-- 訊息清單 -->
+    <!-- Messages Container -->
     <div id="messages" class="messages"></div>
 
-    <!-- 思考中動畫 -->
+    <!-- Thinking Indicator -->
     <div id="thinking" class="thinking hidden">
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span style="margin-left:4px;">客服正在思考 快出來了!</span>
+      <div class="thinking-dots">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <p>客服正在思考，快出來了！</p>
     </div>
-  </main>
 
-  <!-- 輸入列 -->
-  <div class="composer">
-    <!-- 語言選擇按鈕 -->
-    <select id="langSelect" class="lang-select" title="選擇回應語言">
-      <option value="繁體中文">🇹🇼 中文</option>
-      <option value="英文" selected>🇬🇧 English</option>
-    </select>
+    <!-- Input Area -->
+    <div class="input-area">
+      <!-- Controls Row -->
+      <div class="controls-row">
+        <!-- API Server Selector (NEW) -->
+        <select id="apiSelect" class="api-select">
+          <option value="https://taipei-marathon-ai-test-server.onrender.com">台北馬測試</option>
+          <option value="https://taipei-marathon-server.onrender.com">台北馬正式</option>
+          <option value="https://standard-chartered-taipei-charity.onrender.com">渣打馬正式</option>
+        </select>
 
-    <textarea id="txtInput" class="input" placeholder="請輸入您的問題..." rows="1"></textarea>
+        <!-- Language Selector -->
+        <select id="langSelect" class="lang-select">
+          <option value="英文">English</option>
+          <option value="繁體中文" selected>繁體中文</option>
+          <option value="簡體中文">简体中文</option>
+          <option value="日文">日本語</option>
+          <option value="韓文">한국어</option>
+        </select>
 
-    <!-- 隱藏的文件輸入 -->
-    <input type="file" id="fileInput" accept=".txt" style="display: none;">
+        <!-- Upload Button -->
+        <button id="btnUpload" class="btn-upload">📤 上傳</button>
+        <input type="file" id="fileInput" accept=".txt" style="display: none;" />
 
-    <!-- 上傳按鈕 -->
-    <button id="btnUpload" class="btn btn-primary" title="上傳txt文本批次提問">
-      📤 上傳
-    </button>
+        <!-- Stop Button -->
+        <button id="btnStop" class="btn-stop" disabled>⏸️ 中斷</button>
+      </div>
 
-    <!-- 送出按鈕 -->
-    <button id="btnSend" class="btn btn-primary">送出</button>
-
-    <!-- 中斷按鈕 -->
-    <button id="btnStop" class="btn btn-primary" disabled title="中斷批次處理">
-      ⏸️ 中斷
-    </button>
+      <!-- Input Row -->
+      <div class="input-row">
+        <textarea 
+          id="txtInput" 
+          placeholder="請輸入您的問題..." 
+          rows="1"
+        ></textarea>
+        <button id="btnSend" class="btn-send">送出</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
