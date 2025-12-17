@@ -1,5 +1,5 @@
 /**
-* app.js — Frontend Chat Logic with API Selector & Start Question Prompt (Modified v3.6)
+* app.js — Frontend Chat Logic with API Selector & Start Question Prompt (Modified v3.7)
 * ---------------------------------------------------------
 * Key Features:
 * 1) Basic message handling (User/Bot)
@@ -9,22 +9,23 @@
 * 5) HTML rendering support for rich text responses
 * 6) Batch text file upload - sends lines one by one
 * 7) Stop button to interrupt batch processing
-* 8) Auto-retry on "Failed to fetch" error (max 1 retry)
+* 8) Auto-retry on "Failed to fetch" error and specific status codes (max 1 retry)
 * 9) Dynamic API endpoint selection
 * 10) Question mark processing for both single and batch mode
 * 11) Ask user which question to start from after file upload
+* 12) Auto-retry on HTTP 500/502/503/504 errors with user notification
 */
 
 "use strict";
 
 /* =========================
-Backend API Configuration
+   Backend API Configuration
 ========================= */
 let API_BASE = "https://taipei-marathon-ai-test-server.onrender.com"; // Default
 const api = (p) => `${API_BASE}${p}`;
 
 /* =========================
-Client ID Management
+   Client ID Management
 ========================= */
 const CID_KEY = "fourleaf_client_id";
 let clientId = localStorage.getItem(CID_KEY);
@@ -36,7 +37,7 @@ if (!clientId) {
 }
 
 /* =========================
-DOM Elements
+   DOM Elements
 ========================= */
 const elMessages = document.getElementById("messages");
 const elInput = document.getElementById("txtInput");
@@ -49,12 +50,12 @@ const elLangSelect = document.getElementById("langSelect");
 const elApiSelect = document.getElementById("apiSelect");
 
 /* =========================
-Message State
+   Message State
 ========================= */
 const messages = [];
 
 /* =========================
-Batch Processing State
+   Batch Processing State
 ========================= */
 let batchLines = [];
 let batchIndex = 0;
@@ -63,7 +64,7 @@ let shouldStopBatch = false;
 let pendingBatchLines = null; // Store lines while waiting for user input
 
 /* =========================
-Utilities
+   Utilities
 ========================= */
 const uid = () => Math.random().toString(36).slice(2);
 
@@ -72,8 +73,8 @@ function scrollToBottom() {
 }
 
 /**
-* Toggle "Thinking" animation state
-*/
+ * Toggle "Thinking" animation state
+ */
 function setThinking(on) {
   if (!elThinking) return;
   if (on) {
@@ -97,8 +98,8 @@ function setThinking(on) {
 }
 
 /**
-* Update Stop button state
-*/
+ * Update Stop button state
+ */
 function updateStopButton() {
   if (!elBtnStop) return;
   if (isBatchProcessing) {
@@ -109,11 +110,11 @@ function updateStopButton() {
 }
 
 /**
-* Smart Question Mark Handling
-* - Remove trailing question marks
-* - Replace internal question marks with newlines
-* - Clean up multiple newlines
-*/
+ * Smart Question Mark Handling
+ * - Remove trailing question marks
+ * - Replace internal question marks with newlines
+ * - Clean up multiple newlines
+ */
 function processQuestionMarks(text) {
   let result = text;
   // Remove trailing question marks
@@ -126,8 +127,8 @@ function processQuestionMarks(text) {
 }
 
 /**
-* HTML Escape (for User Input Safety)
-*/
+ * HTML Escape (for User Input Safety)
+ */
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
@@ -135,7 +136,7 @@ function escapeHtml(text) {
 }
 
 /* =========================
-Render Messages
+   Render Messages
 ========================= */
 function render() {
   if (!elMessages) return;
@@ -154,7 +155,6 @@ function render() {
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-
     if (isUser) {
       // User message: Escape HTML for security, convert newlines to <br>
       bubble.innerHTML = escapeHtml(m.text).replace(/\n/g, '<br>');
@@ -171,7 +171,7 @@ function render() {
 }
 
 /* =========================
-Send Logic with Retry
+   Send Logic with Retry
 ========================= */
 async function sendText(text, skipProcessing = false, isRetry = false) {
   const content = (text ?? elInput?.value ?? "").trim();
@@ -221,10 +221,33 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
       data = { errorRaw: raw };
     }
 
+    // **新增功能：檢查特定錯誤碼並自動重試**
+    const shouldRetryStatusCodes = [500, 502, 503, 504];
+    if (shouldRetryStatusCodes.includes(res.status) && !isRetry) {
+      console.log(`🔄 收到錯誤碼 ${res.status}，準備重試...`);
+      
+      // 顯示重試訊息
+      const retryMsg = {
+        id: uid(),
+        role: "assistant",
+        text: "⚠️ 現在網路不穩，正在為您重新提問...",
+        ts: Date.now(),
+      };
+      messages.push(retryMsg);
+      render();
+
+      // 等待 1.5 秒後重試
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // 重新發送請求
+      return sendText(content, skipProcessing, true);
+    }
+
     if (!res.ok) {
       if (res.status === 502 || res.status === 404) {
         throw new Error("Network unstable, please try again.");
       }
+
       const serverMsg = (data && (data.error || data.body || data.message)) ?? raw ?? "unknown error";
       throw new Error(`HTTP ${res.status} ${res.statusText} — ${serverMsg}`);
     }
@@ -276,7 +299,7 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
     // Retry logic: if it's a fetch error and not already a retry
     if (isFetchError && !isRetry) {
       console.log('🔄 Failed to fetch detected, retrying once...');
-
+      
       // Show retry message
       const retryMsg = {
         id: uid(),
@@ -296,10 +319,11 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
 
     // If it's a retry and still failed, or not a fetch error
     setThinking(false);
-
     let friendly;
     if (isFetchError && isRetry) {
       friendly = "❌ 連線失敗（已重試），跳過此問題";
+    } else if (isRetry) {
+      friendly = "❌ 重試後仍然失敗，跳過此問題";
     } else {
       friendly = (!navigator.onLine && "You are currently offline. Please check your connection and try again.") || `${err?.message || err}`;
     }
@@ -314,22 +338,22 @@ async function sendText(text, skipProcessing = false, isRetry = false) {
     render();
 
     // In batch mode: continue to next question if retry also failed
-    if (isBatchProcessing && isFetchError && isRetry) {
+    if (isBatchProcessing && isRetry) {
       console.log('⏭️ Skipping to next question after retry failure');
       if (!shouldStopBatch) {
         processBatchNext();
       } else {
         stopBatchProcessing(true);
       }
-    } else if (isBatchProcessing && !isFetchError) {
-      // Stop batch processing on other types of errors
+    } else if (isBatchProcessing && !isRetry && !isFetchError) {
+      // Stop batch processing on other types of errors (first attempt only)
       stopBatchProcessing(false, true);
     }
   }
 }
 
 /* =========================
-Start Question Prompt Handler
+   Start Question Prompt Handler
 ========================= */
 function handleStartQuestionResponse(input) {
   const startNum = parseInt(input.trim());
@@ -381,7 +405,7 @@ function handleStartQuestionResponse(input) {
 }
 
 /* =========================
-Batch Processing Functions
+   Batch Processing Functions
 ========================= */
 function processBatchNext() {
   // Check if user requested stop
@@ -444,7 +468,6 @@ function startBatchProcessing(lines, startFrom = 1) {
   batchIndex = startFrom - 1; // Convert to 0-based index
   isBatchProcessing = true;
   shouldStopBatch = false;
-
   updateStopButton();
 
   const actualCount = lines.length - batchIndex;
@@ -461,7 +484,7 @@ function startBatchProcessing(lines, startFrom = 1) {
 }
 
 /* =========================
-File Upload Handler
+   File Upload Handler
 ========================= */
 function handleFileUpload(event) {
   const file = event.target.files[0];
@@ -490,7 +513,7 @@ function handleFileUpload(event) {
     const promptMsg = {
       id: uid(),
       role: "assistant",
-      text: `📁 已讀取文件，共 ${lines.length} 個問題。<br><br>❓ 請輸入要從第幾個問題開始處理（1-${lines.length}）：<br><small>💡 輸入 1 表示從第一個問題開始，輸入 ${lines.length} 表示只處理最後一個問題</small>`,
+      text: `📁 已讀取文件，共 ${lines.length} 個問題。<br>❓ 請輸入要從第幾個問題開始處理（1-${lines.length}）：<br>💡 輸入 1 表示從第一個問題開始，輸入 ${lines.length} 表示只處理最後一個問題`,
       ts: Date.now(),
     };
     messages.push(promptMsg);
@@ -519,13 +542,12 @@ function handleFileUpload(event) {
   };
 
   reader.readAsText(file);
-
   // Reset file input
   event.target.value = '';
 }
 
 /* =========================
-API Selection Handler
+   API Selection Handler
 ========================= */
 elApiSelect?.addEventListener("change", () => {
   API_BASE = elApiSelect.value;
@@ -543,7 +565,7 @@ elApiSelect?.addEventListener("change", () => {
 });
 
 /* =========================
-Event Listeners
+   Event Listeners
 ========================= */
 elBtnSend?.addEventListener("click", () => {
   if (!isBatchProcessing) {
@@ -585,12 +607,12 @@ elInput?.addEventListener("keydown", (e) => {
 window.addEventListener("load", () => elInput?.focus());
 
 /* =========================
-Initial Welcome Message
+   Initial Welcome Message
 ========================= */
 messages.push({
   id: uid(),
   role: "assistant",
-  text: "Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br><br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問",
+  text: "Welcome to the Taipei Marathon Smart Customer Service!<br>I am your assistant. How can I help you today?<br>💡 提示：您可以使用「📤 上傳」按鈕上傳 .txt 文件進行批次提問",
   ts: Date.now(),
 });
 render();
