@@ -149,8 +149,8 @@ function render() {
     const avatar = document.createElement("img");
     avatar.className = "avatar";
     avatar.src = isUser
-      ? 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon_AI_Test/refs/heads/main/assets/101_run_up/user-avatar.jpg'
-      : 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon_AI_Test/refs/heads/main/assets/101_run_up/bot.jpg';
+      ? 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon_AI_Test/refs/heads/main/assets/101_run_up/user-avatar.png'
+      : 'https://raw.githubusercontent.com/justin-321-hub/taipei_marathon_AI_Test/refs/heads/main/assets/101_run_up/bot.png';
     avatar.alt = isUser ? "You" : "Bot";
 
     const bubble = document.createElement("div");
